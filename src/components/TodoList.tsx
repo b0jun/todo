@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import styled from '@emotion/styled';
 
 const Container = styled.div`
@@ -75,19 +75,65 @@ interface Todo {
 export default function TodoList() {
   const [todos, setTodos] = useState<Todo[]>([]);
   const [inputValue, setInputValue] = useState('');
+  const [loading, setLoading] = useState(false);
 
-  const addTodo = () => {
+  useEffect(() => {
+    const fetchTodos = async () => {
+      setLoading(true);
+      try {
+        const response = await fetch('/api/todos');
+        const data: Todo[] = await response.json();
+        setTodos(data);
+      } catch (error) {
+        console.error('Failed to fetch todos:', error);
+      } finally {
+        setLoading(false);
+      }
+    };
+    fetchTodos();
+  }, []);
+
+  const addTodo = async () => {
     if (inputValue.trim() === '') return;
-    setTodos([...todos, { id: Date.now(), text: inputValue, completed: false }]);
-    setInputValue('');
+
+    try {
+      const response = await fetch('/api/todos', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ text: inputValue }),
+      });
+      const newTodo: Todo = await response.json();
+      setTodos([...todos, newTodo]);
+      setInputValue('');
+    } catch (error) {
+      console.error('Failed to add todo:', error);
+    }
   };
 
-  const toggleComplete = (id: number) => {
-    setTodos(todos.map((todo) => (todo.id === id ? { ...todo, completed: !todo.completed } : todo)));
+  const toggleComplete = async (id: number) => {
+    const todoToUpdate = todos.find((todo) => todo.id === id);
+    if (!todoToUpdate) return;
+
+    try {
+      const response = await fetch(`/api/todos/${id}`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ completed: !todoToUpdate.completed }),
+      });
+      const updatedTodo: { id: number; completed: boolean } = await response.json();
+      setTodos(todos.map((todo) => (todo.id === id ? { ...todo, completed: updatedTodo.completed } : todo)));
+    } catch (error) {
+      console.error('Failed to toggle todo:', error);
+    }
   };
 
-  const deleteTodo = (id: number) => {
-    setTodos(todos.filter((todo) => todo.id !== id));
+  const deleteTodo = async (id: number) => {
+    try {
+      await fetch(`/api/todos/${id}`, { method: 'DELETE' });
+      setTodos(todos.filter((todo) => todo.id !== id));
+    } catch (error) {
+      console.error('Failed to delete todo:', error);
+    }
   };
 
   return (
@@ -98,19 +144,26 @@ export default function TodoList() {
         value={inputValue}
         onChange={(e) => setInputValue(e.target.value)}
         onKeyDown={(e) => e.key === 'Enter' && addTodo()}
+        disabled={loading}
       />
-      <Button onClick={addTodo}>추가하기</Button>
+      <Button onClick={addTodo} disabled={loading}>
+        {loading ? '처리 중...' : '추가하기'}
+      </Button>
 
-      <TodoListContainer>
-        {todos.map((todo) => (
-          <TodoItem key={todo.id} completed={todo.completed}>
-            <span onClick={() => toggleComplete(todo.id)}>
-              {todo.completed ? '완료' : '미완료'} {todo.text}
-            </span>
-            <DeleteButton onClick={() => deleteTodo(todo.id)}>삭제</DeleteButton>
-          </TodoItem>
-        ))}
-      </TodoListContainer>
+      {loading ? (
+        <p>로딩 중...</p>
+      ) : (
+        <TodoListContainer>
+          {todos.map((todo) => (
+            <TodoItem key={todo.id} completed={todo.completed}>
+              <span onClick={() => toggleComplete(todo.id)}>
+                {todo.completed ? '완료' : '미완료'} {todo.text}
+              </span>
+              <DeleteButton onClick={() => deleteTodo(todo.id)}>삭제</DeleteButton>
+            </TodoItem>
+          ))}
+        </TodoListContainer>
+      )}
     </Container>
   );
 }
